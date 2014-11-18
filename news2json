@@ -9,12 +9,12 @@
  news2json
     Give usage.
  
- news2json token server [fromname]
+ news2json token -s server [-f domain]
     Parse a MIME stream with sm from @token@, convert it to JSON Object,
     and give it to curl for sending to a JNTP server.
  
 =head1 DESCRIPTION
- 
+
  
 =head1 AUTHOR
  
@@ -35,17 +35,19 @@ use Encode::Detect::Detector;
 use Getopt::Std;
 use DateTime;
 use DateTime::Format::HTTP;
+use Digest::SHA;
+
 # For debug
-use Data::Dumper;
+# use Data::Dumper;
 
 my $GW_NAME     = "News2Json";
 my $GW_VERSION  = "0.0.1-alpha";
 
-my $sep = "\n--------------------\n";   # Use for debug/testing
+my $domain = "home.gegeweb.org";
 
 $ARGV[0] or die "Missins argvs!";   # Si on veut deux arg : $ARGV[1] or die;
 my $num_args = grep $_, @ARGV;      # Compte le nombre de valeurs du tableau
-my %opts;
+my %opts;							# Options
 
 my $parser = new MIME::Parser;
 $parser->output_to_core(1);
@@ -57,16 +59,12 @@ my $message = $ARGV[0];
 #my $token=$ARGV[0];
 #my $message = readpipe ("/usr/local/news/bin/sm $token" )
 
-
-my %msg = n2j($message);
-
-my $json = JSON->new->utf8->canonical(1);
-my $news2json = $json->encode(\%msg);
+my $news2json = n2j($message);
 
 ## For Debug (TODO : option -d to script)
 print "\n----- START -----\n\nPaquet JSON :\n-------------\n\n";
 
-print $json->indent(1)->space_after(1)->encode(\%msg);
+print $news2json;
 
 print "\n----- END -----\n\n";
 
@@ -91,21 +89,27 @@ sub n2j {
     my $injectiondate = undef;
     my @ref;
     
-    my %article = (
-        Route => [],
-        Jid => undef,
-        Data => {
-            DataType => "NetNews",
-            Newsgroups => [],
-            FollowupTo => [],
-            References => [],
-            Protocol => "JNTP-Transitional",
-            Origin => "NNTP",
-            MimeType => $ent->mime_type,
-            Gateway => "$GW_NAME / $GW_VERSION",
-        }
+    # Hashs for JSON Object
+    # need to isolate data & nntpheader for sha Jid
+    my %nntpheaders;
+    my %data = (
+        DataType => "NetNews",
+        Newsgroups => [],
+        FollowupTo => [],
+        References => [],
+        Protocol => "JNTP-Transitional",
+        Origin => "NNTP",
+        OriginServer => $domain,
+        MimeType => $ent->mime_type,
+        Gateway => "$GW_NAME / $GW_VERSION",
     );
-    
+    my %article = (
+        Route => [$domain],
+        Jid => undef,
+        Data => \%data
+        ID => undef;
+    );
+
     # Header
     foreach (@$head) {
         my @header = split(':',$_, 2);
@@ -129,54 +133,54 @@ sub n2j {
                 my @args = split(' ', $value);
                 
                 if ($args[0] eq "checkgroups") {
-                    $article{'Data'}{'Control'}[0] = $value;
+                    $data{'Control'}[0] = $value;
                 }
                 elsif ($args[0] eq "cancel") {
                     ($args[1] = $args[1]) =~ s/<(.*?)\>/$1/;
-                    $article{'Data'}{'Control'} = \@args;
+                    $data{'Control'} = \@args;
                 }
                 else {
-                    $article{'Data'}{'Control'} = \@args;
+                    $data{'Control'} = \@args;
                 }
             }
             elsif ($key eq "supersedes") {
-                ($article{'Data'}{$header[0]} = $value) =~ s/<(.*?)\>/$1/;
+                ($data{$header[0]} = $value) =~ s/<(.*?)\>/$1/;
             }
             # MessageID
             elsif ($key eq "message-id") {
-                ($article{'Jid'} = $value) =~ s/<(.*?)\>/$1/;
+                ($data{'*MessageID'} = $value) =~ s/<(.*?)\>/$1/;
             }
             # References
             elsif ($key eq "references") {
                 (undef, @ref) = split m/[<>, \n\t]+/, $value;
-                $article{'Data'}{$header[0]} = \@ref;
+                $data{$header[0]} = \@ref;
             }
             # NewsGroups & Followup-To
             elsif ( grep { $key eq $_ } (qw(newsgroups followup-to)) ) {
                 my @ng = split ",", $value;
                 s{^\s+|\s+$}{}g foreach @ng;
                 ($header[0] = $header[0]) =~ s/-//g;
-                $article{'Data'}{$header[0]} = \@ng;
+                $data{$header[0]} = \@ng;
             }
             # Split From header to FromName / FromMail JNTP Headers
             elsif ($key eq "from") {
                 my ($addr) = Mail::Address->parse($value);
-                $article{'Data'}{'FromName'} = $addr->name;
-                $article{'Data'}{'FromMail'} = $addr->address;
+                $data{'FromName'} = $addr->name;
+                $data{'FromMail'} = $addr->address;
             }
             # Set InjectionDate
             elsif ( grep { $key eq $_ } (qw(injection-date nntp-posting-date)) ) {
                 $injectiondate = httpdate($value);
-                $article{'Data'}{'NNTPHeaders'}{$header[0]} = $value;
+                $nntpheaders{$header[0]} = $value;
             }
             elsif ($key eq "x-trace") {
-                $article{'Data'}{'NNTPHeaders'}{$header[0]} = $value;
+                $nntpheaders{$header[0]} = $value;
                 my @matches = $value =~ /\((.*?)\)/x;
                 $injectiondate = httpdate($matches[0]) if (@matches);
             }
             elsif ($key eq "date") {
                 $injectiondate = httpdate($value);
-                $article{'Data'}{'NNTPHeaders'}{$header[0]} = $value;
+                $nntpheaders{$header[0]} = $value;
             }
             elsif ( grep { $key eq $_ } (qw(user-agent reply-to organization subject)) ) {
                 ($header[0] = $header[0]) =~ s/-//g;
@@ -187,20 +191,20 @@ sub n2j {
             }
             # Keep all other Headers in 'NNTPheaders'
             elsif ($key ne "xref") {
-                $article{'Data'}{'NNTPHeaders'}{$header[0]} = $value;
+                $nntpheaders{$header[0]} = $value;
             }
         }
     }
     
     if(defined $injectiondate) {
-        $article{'Data'}{'InjectionDate'} = $injectiondate;
+        $data{'InjectionDate'} = $injectiondate;
     }
     else {
         die "No header date found!\n" if (!defined $injectiondate);
     }
     
     # Fix ThreadID with JID if not References else do nothing
-    $article{'Data'}{'ThreadID'} = $article{'Jid'} if (scalar(grep $_, @ref) > 0);
+    $data{'ThreadID'} = $article{'Jid'} if (scalar(grep $_, @ref) > 0);
     
     # Body
     if (!$ent->is_multipart) {
@@ -214,16 +218,15 @@ sub n2j {
         my $body = $ent->body;
         $body = join('', @$body);
         
-        if ($charset) {
+        if (!$charset) {
             my $charset = detect($body);
-            $article{'Data'}{'NNTPHeaders'}{'CharsetDetect'} = $charset;
+            $nntpheaders{'CharsetDetect'} = $charset;
         }
-        $article{'Data'}{'Body'} = decode($charset, $body);
-        $article{'Data'}{'Encoding'} = $ent->head->mime_encoding if ($ent->head->mime_encoding ne "8bit");
+        $data{'Body'} = decode($charset, $body);
+        $data{'Encoding'} = $ent->head->mime_encoding if ($ent->head->mime_encoding ne "8bit");
     }
     # Multipart (only multipart/alternative at this time
     else {
-        $article{'Data'}{'Body'} = "";
         for (my $i=0; $i<$ent->parts; $i++) {
             
             my $subent = $ent->parts($i);
@@ -238,17 +241,29 @@ sub n2j {
             my $body = $subent->body;
             $body = join('', @$body);
             
-            $article{'Data'}{'Multipart'}[$i]{'MimeType'} = $mime_type;
-            $article{'Data'}{'Multipart'}[$i]{'Encoding'} = $subent->head->mime_encoding if ($subent->head->mime_encoding ne "8bit");
+            $data{'Multipart'}[$i]{'MimeType'} = $mime_type;
+            $data{'Multipart'}[$i]{'Encoding'} = $subent->head->mime_encoding if ($subent->head->mime_encoding ne "8bit");
             if (!$charset) {
                 my $charset = detect($body);
-                $article{'Data'}{'Multipart'}[$i]{'CharsetDetect'} = $charset;
+                $data{'Multipart'}[$i]{'CharsetDetect'} = $charset;
             }
-            $article{'Data'}{'Multipart'}[$i]{'Body'} = decode($charset, $body);
+            $data{'Multipart'}[$i]{'Body'} = decode($charset, $body);
         }
     }
     
-    return %article;
+    $article{'Data'} = \%data;
+    $article{'Data'}{'@NNTPHeaders'} = \%nntpheaders;
+    
+    # encode data to json and calcul Jid
+    my $json = JSON->new->utf8->canonical(1);
+    my $news2json = $json->encode(\%data);
+    my $sha1 = Digest::SHA->new->add($news2json)->hexdigest;
+    $article{'Jid'} = $sha1.'@'.$domain; 
+	
+	# $news2json = $json->encode(\%article);
+	$news2json = $json->indent(1)->space_after(1)->encode(\%article);
+	
+    return $news2json;
     
 }
 # ------------------------------
