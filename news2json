@@ -91,8 +91,7 @@ sub n2j {
     my @ref;
     
     # Hashs for JSON Object
-    # need to isolate data & nntpheader for sha Jid
-    my %nntpheaders;
+    # need to isolate data for sha Jid
     my %data = (
         DataType => "NetNews",
         Newsgroups => [],
@@ -152,7 +151,7 @@ sub n2j {
             }
             # MessageID
             elsif ($key eq "message-id") {
-                ($data{'MessageID'} = $value) =~ s/<(.*?)\>/$1/;
+                ($data{'*MessageID'} = $value) =~ s/<(.*?)\>/$1/;
             }
             # References
             elsif ($key eq "references") {
@@ -175,16 +174,16 @@ sub n2j {
             # Set InjectionDate
             elsif ( grep { $key eq $_ } (qw(injection-date nntp-posting-date)) ) {
                 $injectiondate = httpdate($value);
-                $nntpheaders{$header[0]} = $value;
+                $data{'NNTPHeaders'}{$header[0]} = $value;
             }
             elsif ($key eq "x-trace") {
-                $nntpheaders{$header[0]} = $value;
+                $data{'NNTPHeaders'}{$header[0]} = $value;
                 my @matches = $value =~ /\((.*?)\)/x;
                 $injectiondate = httpdate($matches[0]) if (@matches);
             }
             elsif ($key eq "date") {
                 $injectiondate = httpdate($value);
-                $nntpheaders{$header[0]} = $value;
+                $data{'NNTPHeaders'}{$header[0]} = $value;
             }
             elsif ( grep { $key eq $_ } (qw(user-agent reply-to organization subject)) ) {
                 ($header[0] = $header[0]) =~ s/-//g;
@@ -195,7 +194,7 @@ sub n2j {
             }
             # Keep all other Headers in 'NNTPheaders'
             elsif ($key ne "xref") {
-                $nntpheaders{$header[0]} = $value;
+                 $data{'NNTPHeaders'}{$header[0]} = $value;
             }
         }
     }
@@ -208,7 +207,7 @@ sub n2j {
     }
     
     # Fix ThreadID with JID if not References else do nothing
-    $data{'ThreadID'} = $article{'MessageID'} if (scalar(grep $_, @ref) > 0);
+    $data{'ThreadID'} = $article{'*MessageID'} if (scalar(grep $_, @ref) > 0);
     
     # Body
     if (!$ent->is_multipart) {
@@ -224,7 +223,7 @@ sub n2j {
         
         if (!$charset) {
             my $charset = detect($body);
-            $nntpheaders{'CharsetDetect'} = $charset;
+             $data{'NNTPHeaders'}{'CharsetDetect'} = $charset;
         }
         $data{'Body'} = decode($charset, $body);
         $data{'Encoding'} = $ent->head->mime_encoding if ($ent->head->mime_encoding ne "8bit");
@@ -256,7 +255,6 @@ sub n2j {
     }
     
     $article{'Data'} = \%data;
-    $article{'Data'}{'NNTPHeaders'} = \%nntpheaders;
     
     # encode data to json and calcul Jid
     my $json = JSON->new->utf8->canonical(1);
