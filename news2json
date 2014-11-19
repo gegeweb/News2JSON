@@ -25,6 +25,7 @@
 
 use strict;
 use warnings;
+use utf8;
 
 use MIME::Parser;
 use Mail::Address;
@@ -102,12 +103,15 @@ sub n2j {
         OriginServer => $domain,
         MimeType => $ent->mime_type,
         Gateway => "$GW_NAME / $GW_VERSION",
+        ThreadID => '',
+        Body => '',
     );
     my %article = (
         Route => [$domain],
         Jid => undef,
-        Data => \%data
-        ID => undef;
+        Data => \%data,
+        ID => '',
+        Media => []
     );
 
     # Header
@@ -184,10 +188,10 @@ sub n2j {
             }
             elsif ( grep { $key eq $_ } (qw(user-agent reply-to organization subject)) ) {
                 ($header[0] = $header[0]) =~ s/-//g;
-                $article{ Data }{ $header[0] } = $value;
+                $data{$header[0]} = $value;
             }
             elsif ($key eq "x-complaints-to") {
-                $article{ Data }{ ComplaintsTo } = $value;
+                $data{'ComplaintsTo'} = $value;
             }
             # Keep all other Headers in 'NNTPheaders'
             elsif ($key ne "xref") {
@@ -225,7 +229,7 @@ sub n2j {
         $data{'Body'} = decode($charset, $body);
         $data{'Encoding'} = $ent->head->mime_encoding if ($ent->head->mime_encoding ne "8bit");
     }
-    # Multipart (only multipart/alternative at this time
+    # Multipart (only multipart/alternative at this time)
     else {
         for (my $i=0; $i<$ent->parts; $i++) {
             
