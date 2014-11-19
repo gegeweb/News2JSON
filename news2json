@@ -204,7 +204,7 @@ sub n2j {
         $data{'InjectionDate'} = $injectiondate;
     }
     else {
-        die "No header date found!\n" if (!defined $injectiondate);
+        die "No header date found!\n";
     }
     
     # Fix ThreadID with JID if not References else do nothing
