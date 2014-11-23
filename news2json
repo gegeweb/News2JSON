@@ -1,34 +1,34 @@
 #!/usr/bin/perl -w
 
 =head1 NAME
- 
+
  news2json - News (RFC5536 / RFC1036) to JNTP (JSON) GateWay for INN
- 
- Copyright (c) 2014, Gérald Niel 
- 
+
+ Copyright (c) 2014, Gérald Niel
+
 =head1 SYNOPSIS
- 
+
  news2json
     Give usage.
- 
- news2json token -s server [-f domain]
+
+ news2json -s server [-f domain -d] token|message
     Parse a MIME stream with sm from @token@, convert it to JSON Object,
-    and give it to curl for sending to a JNTP server.
- 
+    and send it to a JNTP server.
+
 =head1 DESCRIPTION
 
- 
+
 =head1 AUTHOR
- 
+
  Gérald Niel, gerald.niel@gmail.com
  Stéphane Grégoire, stephane.gregoire@mhuu.org
- 
+
  All rights reserved.
 
  This program is free software; you can redistribute it and/or modify it
  under the same terms as Perl 5.10.0. For more details, see the full
  text of the licenses in the directory LICENSES.
- 
+
 =cut
 
 use strict;
@@ -36,82 +36,138 @@ use warnings;
 use utf8;
 
 use MIME::Parser;
+use MIME::Base64;
 use Mail::Address;
 use JSON;
 use MIME::WordDecoder;
 use Encode;
 use Encode::Detect::Detector;
-use Getopt::Std;
 use DateTime;
 use DateTime::Format::HTTP;
 use Digest::SHA;
-
-# For debug
-# use Data::Dumper;
+use LWP::UserAgent;
+use Sys::Hostname;
+use Crypt::OpenSSL::RSA;
+use Data::Dumper;
+use Getopt::Std;
+use vars qw($opt_d $opt_m $opt_s $opt_f);
 
 my $GW_NAME     = "News2Json";
 my $GW_VERSION  = "0.0.1-alpha";
+my $USER_AGENT	= "$GW_NAME/$GW_VERSION";
+my $ORIGIN 		= "NNTP";
+my $DATATYPE	= "NetNews";
+my $PROTOCOL	= "JNTP-Transitional";
 
-my $domain = "home.gegeweb.org";
+# ---- OPTIONS ----
+getopts("dms:f:");
 
-$ARGV[0] or die "Missins argvs!";   # Si on veut deux arg : $ARGV[1] or die;
-my $num_args = grep $_, @ARGV;      # Compte le nombre de valeurs du tableau
-my %opts;							# Options
+($ARGV[0] && $opt_s) or die "Missing argvs!";
+
+my $server = ($opt_s ? $opt_s : 'jntp.gegeweb.org');	# Option '-s server'
+my $domain = ($opt_f ? $opt_f : hostname);				# Option '-d domain'
+# ------------------
+
+my $message;
+
+# SSL
+my $pubkey = read_file('.ssl/jntp.cert');
+my $privkey = read_file('.ssl/jntp.key');
 
 my $parser = new MIME::Parser;
 $parser->output_to_core(1);
 
-# from file (TODO : option -d to script)
-my $message = $ARGV[0];
+if ($opt_m) {
+	$message = $ARGV[0];
+}
+else {
+	my $token=$ARGV[0];
+	$message = readpipe ("/usr/local/news/bin/sm $token" );
+}
 
-# from sm pipe
-#my $token=$ARGV[0];
-#my $message = readpipe ("/usr/local/news/bin/sm $token" )
+my %article = n2j($message);
 
-my $news2json = n2j($message);
+if (!$opt_d) {
+	# ---- HTTP ---
+	# LWP crée un agent et une requête
+	my $ua  = LWP::UserAgent->new( agent => $USER_AGENT);
+	my @json_request;
+	$json_request[0] = "ihave";
+	my %json_argv = (
+		Jid => [($article{'Data'}{'*ArticleID'} ? $article{'Data'}{'*ArticleID'} : $article{'Jid'})],
+		From => $domain
+	);
+	$json_request[1] = \%json_argv;
+	my $json_string = JSON->new->utf8->encode(\@json_request);
+	print "> ".$json_string."\n";
+	my $h = HTTP::Headers->new(Content_Type => 'application/json');
+	my $req = HTTP::Request->new( POST => "http://$server/jntp/",$h, $json_string );
+	my $res = $ua->request($req);
+	die $res->status_line if not $res->is_success;
+	$res = $res->content;
+	print "< $res\n";
 
-## For Debug (TODO : option -d to script)
-print "\n----- START -----\n\nPaquet JSON :\n-------------\n\n";
+	my $json_resp = JSON->new->decode($res);
 
-print $news2json;
-
-print "\n----- END -----\n\n";
+	if (ref($json_resp) eq 'ARRAY' && scalar(grep $_, @$json_resp) > 0 && $$json_resp[0] eq "iwant" && scalar(grep $_, $$json_resp[1]{'Jid'}[0]) > 0 && $$json_resp[1]{'Jid'}[0] eq $article{'Jid'}) {
+		$json_request[0] = "diffuse";
+		my %json_argv = (
+			From => $domain,
+			Packet => \%article
+		);
+		$json_request[1] = \%json_argv;
+		$json_string = JSON->new->utf8->encode(\@json_request);
+		my $h = HTTP::Headers->new(Content_Type => 'application/json');
+		my $req = HTTP::Request->new( POST => "http://$server/jntp/",$h, $json_string );
+		my $res = $ua->request($req);
+		$res = $res->content;
+		print "< $res\n";
+	}
+	# -------------
+} else {
+	## Debug JSON from message file
+	print "\n----- START -----\n\n";
+	print "Paquet JSON :\n-------------\n\n";
+	print JSON->new->utf8->canonical(1)->indent(1)->encode(\%article);
+	print "\n----- END -----\n\n";
+}
 
 # ------------------------------
 #
 # News2Json
 #
 sub n2j {
-    
-    my ($txt) = @_;
-    
+	my ($txt) = @_;
+
     my $parser = new MIME::Parser;
     $parser->output_to_core(1);
     $parser->extract_nested_messages(1);
-    
+
     # Parse message in core
     #my $ent = $parser->parse_data($txt);
     # Parse message from file
     my $ent = $parser->parse_open($txt);
     my $head = $ent->header;
-    
-    my $injectiondate = undef;
-    my @ref;
-    
+
+    my ( $injectiondate, $mime_type, $mime_encoding, $charset, $key, $value, @ref, @header );
+
     # Hashs for JSON Object
     # need to isolate data for sha Jid
     my %data = (
-        DataType => "NetNews",
+    	DataType => $DATATYPE,
+    	FromName => '',
+    	FromMail => '',
+    	Subject => '',
         Newsgroups => [],
         FollowupTo => [],
         References => [],
-        Protocol => "JNTP-Transitional",
-        Origin => "NNTP",
+        Protocol => $PROTOCOL,
+        Origin => $ORIGIN,
         OriginServer => $domain,
-        MimeType => $ent->mime_type,
-        Gateway => "$GW_NAME / $GW_VERSION",
-        ThreadID => "",
-        Body => "",
+        Server => $USER_AGENT,
+        ServerPublicKey => $pubkey,
+        '*ThreadID' => '',
+        Body => ''
     );
     my %article = (
         Route => [$domain],
@@ -123,26 +179,25 @@ sub n2j {
 
     # Header
     foreach (@$head) {
-        my @header = split(':',$_, 2);
-        my $key = lc($header[0]);
-        my $value = $ent->head->get($key);
-        
-        if ($value) {
-            
+        @header = split(':',$_, 2);
+        $key = lc($header[0]);
+        $value = $ent->head->get($key);
+
+        if ($value && $key ne "xref") {
+
             # Test if already sent from jntp, die if true.
             die "Already sent from jntp!\n" if (($key eq "path" && index($value, "!from-jntp") !=-1) || $key eq "jntp-protocol");
-            
             # Decode encoded headers
             my $wd = supported MIME::WordDecoder 'UTF-8';
             $value = $wd->decode($value);
             # Réassemble sur une ligne et supprime le newline
             $value = join " ", split m/[ \n\t]+/, $value;
             chomp($value);
-            
+
             # Control
             if ($key eq "control") {
                 my @args = split(' ', $value);
-                
+
                 if ($args[0] eq "checkgroups") {
                     $data{'Control'}[0] = $value;
                 }
@@ -159,7 +214,7 @@ sub n2j {
             }
             # MessageID
             elsif ($key eq "message-id") {
-                ($data{'*MessageID'} = $value) =~ s/<(.*?)\>/$1/;
+                ($data{'*ArticleID'} = $value) =~ s/<(.*?)\>/$1/;
             }
             # References
             elsif ($key eq "references") {
@@ -170,7 +225,7 @@ sub n2j {
             elsif ( grep { $key eq $_ } (qw(newsgroups followup-to)) ) {
                 my @ng = split ",", $value;
                 s{^\s+|\s+$}{}g foreach @ng;
-                ($header[0] = $header[0]) =~ s/-//g;
+                $header[0] =~ s/-//g;
                 $data{$header[0]} = \@ng;
             }
             # Split From header to FromName / FromMail JNTP Headers
@@ -182,114 +237,158 @@ sub n2j {
             # Set InjectionDate
             elsif ( grep { $key eq $_ } (qw(injection-date nntp-posting-date)) ) {
                 $injectiondate = httpdate($value);
-                $data{'NNTPHeaders'}{$header[0]} = $value;
+                $data{'OriginHeaders'}{$header[0]} = $value;
             }
             elsif ($key eq "x-trace") {
-                $data{'NNTPHeaders'}{$header[0]} = $value;
+                $data{'OriginHeaders'}{$header[0]} = $value;
                 my @matches = $value =~ /\((.*?)\)/x;
-                $injectiondate = httpdate($matches[0]) if (@matches);
+                $injectiondate = httpdate($matches[0]) if (@matches && !defined($injectiondate));
             }
             elsif ($key eq "date") {
-                $injectiondate = httpdate($value);
-                $data{'NNTPHeaders'}{$header[0]} = $value;
+                $injectiondate = httpdate($value) if (!defined($injectiondate));
+                $data{'OriginHeaders'}{$header[0]} = $value;
             }
             elsif ( grep { $key eq $_ } (qw(user-agent reply-to organization subject)) ) {
-                ($header[0] = $header[0]) =~ s/-//g;
+                $header[0] =~ s/-//g;
                 $data{$header[0]} = $value;
             }
             elsif ($key eq "x-complaints-to") {
                 $data{'ComplaintsTo'} = $value;
             }
-            # Keep all other Headers in 'NNTPheaders'
-            elsif ($key ne "xref") {
-                 $data{'NNTPHeaders'}{$header[0]} = $value;
+            elsif ($key eq "nntp-posting-host") {
+            	$data{'PostingHost'} = $value;
+            	$data{'OriginHeaders'}{$header[0]} = $value;
+            }
+            # Keep all other Headers in 'Headers'
+            else {
+                 $data{'OriginHeaders'}{$header[0]} = $value;
             }
         }
     }
-    
-    if(defined $injectiondate) {
-        $data{'InjectionDate'} = $injectiondate;
-    }
-    else {
-        die "No header date found!\n";
-    }
-    
-    # Fix ThreadID with JID if not References else do nothing
-    $data{'ThreadID'} = $data{'*MessageID'} if (scalar(grep $_, @ref) > 0);
-    
+
+	die "Newsgroups empty!" if (!defined($data{'Newsgroups'}[0]));
+	die "Subject empty!" if ($data{'Subject'} eq '');
+
+	$injectiondate = httpdate(DateTime->now()) if(!defined($injectiondate));
+	$data{'InjectionDate'} = $injectiondate;
+
+    # Fix ThreadID with *ArticleID if not References else do nothing
+	$data{'*ThreadID'} = $data{'*ArticleID'} if (scalar(grep $_, @ref) == 0 && defined($data{'*ArticleID'}));
+
     # Body
     if (!$ent->is_multipart) {
-        my $mime_encoding = $ent->head->mime_encoding;
-        my $charset = $ent->head->mime_attr('content-type.charset');
-        
-        if ( grep { $mime_encoding eq $_ } (qw(quoted-printable base64)) ) {
+        $mime_encoding = $ent->head->mime_encoding;
+        $mime_type = $ent->mime_type;
+        if (!defined($mime_type)) {
+			$mime_type = "text/plain";
+			$ent->head->replace('Content-type', 'text/plain');
+        }
+        $charset = $ent->head->mime_attr('content-type.charset');
+
+		$data{'OriginHeaders'}{'MimeType'} = $mime_type;
+
+        if ( !defined($mime_encoding) || grep { $mime_encoding eq $_ } (qw(quoted-printable base64 7bit)) ) {
             $ent->head->replace('Content-transfer-encoding', "8bit");
         }
-        
+
         my $body = $ent->body;
         $body = join('', @$body);
-        
-        if (!$charset) {
-            my $charset = detect($body);
-             $data{'NNTPHeaders'}{'CharsetDetect'} = $charset;
+
+        if (!defined($charset)) {
+        	$charset = detect($body);
+            $data{'OriginHeaders'}{'CharsetDetect'} = $charset;
         }
         $data{'Body'} = decode($charset, $body);
-        $data{'Encoding'} = $ent->head->mime_encoding if ($ent->head->mime_encoding ne "8bit");
+        $data{'Encoding'} = $ent->head->mime_encoding if ($ent->head->mime_encoding && $ent->head->mime_encoding ne "8bit");
     }
-    # Multipart (only multipart/alternative at this time)
-    else {
+    # Multipart
+    elsif ( $mime_type eq 'multipart/alternative') {
         for (my $i=0; $i<$ent->parts; $i++) {
-            
+
             my $subent = $ent->parts($i);
-            my $mime_type = $subent->mime_type;
-            my $mime_encoding = $subent->head->mime_encoding;
-            my $charset = $subent->head->mime_attr('content-type.charset');
-            
-            if ( grep { $mime_encoding eq $_ } (qw(quoted-printable base64)) ) {
+            $mime_type = $subent->mime_type;
+            if (!defined($mime_type)) {
+            	$mime_type = "text/plain";
+            	$subent->head->replace('Content-type', 'text/plain');
+            }
+            $mime_encoding = $subent->head->mime_encoding;
+            $charset = $subent->head->mime_attr('content-type.charset');
+
+            if ( !defined($mime_encoding) || grep { $mime_encoding eq $_ } (qw(quoted-printable base64 7bit)) ) {
                 $subent->head->replace('Content-transfer-encoding', "8bit");
             }
-            
+
             my $body = $subent->body;
             $body = join('', @$body);
-            
+
             $data{'Multipart'}[$i]{'MimeType'} = $mime_type;
             $data{'Multipart'}[$i]{'Encoding'} = $subent->head->mime_encoding if ($subent->head->mime_encoding ne "8bit");
-            if (!$charset) {
+            if (!defined($charset)) {
                 my $charset = detect($body);
                 $data{'Multipart'}[$i]{'CharsetDetect'} = $charset;
             }
             $data{'Multipart'}[$i]{'Body'} = decode($charset, $body);
         }
     }
-    
+    else {
+    	## Nothing
+    }
+
     $article{'Data'} = \%data;
-    
+
     # encode data to json and calcul Jid
-    my $json = JSON->new->utf8->canonical(1);
-    my $news2json = $json->encode(\%data);
+    my $news2json = JSON->new->utf8->canonical(1)->encode(\%data);
     my $sha1 = Digest::SHA->new->add($news2json)->hexdigest;
-    $article{'Jid'} = $sha1.'@'.$domain; 
-	
-    # $news2json = $json->encode(\%article);
-    $news2json = $json->indent(1)->space_after(1)->encode(\%article);
-	
-    return $news2json;
-    
+    $article{'Jid'} = $sha1.'@'.$domain;
+    my $rsa_priv = Crypt::OpenSSL::RSA->new_private_key($privkey);
+    my $signature = $rsa_priv->sign($article{'Jid'});
+    $signature = encode_base64($signature);
+    chomp ($signature);
+    $article{'ServerSign'} = $signature;
+
+    return %article;
+
 }
 # ------------------------------
 
 # ------------------------------
 #
 # InjectionDate
+# Convert Date to JNTP format string
 #
 sub httpdate {
     my ($txt) = @_;
-    
+
     my $dt = DateTime::Format::HTTP->parse_datetime($txt);
     $dt = $dt->clone()->set_time_zone('UTC');
+    return undef if ($dt > DateTime->now());
     $dt = $dt->strftime("%FT%TZ");
-    
+
     return $dt;
+}
+# ------------------------------
+
+# ------------------------------
+#
+# Requête JNTP
+#
+sub jntp_request {
+	my ($command, $key, $value) = @_;
+
+}
+# ------------------------------
+
+# ------------------------------
+# Read file by lines and return string.
+#
+sub read_file {
+	my ($path) = @_;
+
+	open (my $file, '<', $path) or die $!;
+	my @lines = <$file>;
+	$file = join ('', @lines);
+	chomp($file);
+	return $file;
 }
 # ------------------------------
 
