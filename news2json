@@ -71,8 +71,8 @@ my $domain = ($opt_f ? $opt_f : hostname);				# Option '-d domain'
 my $message;
 
 # SSL
-my $pubkey = read_file('.ssl/jntp.cert');
-my $privkey = read_file('.ssl/jntp.key');
+my $pubkey = read_file('/Users/gerald/.ssl/jntp.cert');
+my $privkey = read_file('/Users/gerald/.ssl/jntp.key');
 
 my $parser = new MIME::Parser;
 $parser->output_to_core(1);
