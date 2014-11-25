@@ -56,8 +56,9 @@ my $GW_NAME     = "News2Json";
 my $GW_VERSION  = "0.0.1-alpha";
 my $USER_AGENT	= "$GW_NAME/$GW_VERSION";
 my $ORIGIN 		= "NNTP";
-my $DATATYPE	= "NetNews";
-my $PROTOCOL	= "JNTP-Transitional";
+my $DATATYPE	= "Article";
+my $PROTOCOL	= "JNTP-Transitional";		# For backward compatibility
+my $PROTOCL_V	= "0.93";					# For backward compatibility
 
 # ---- OPTIONS ----
 getopts("dms:f:");
@@ -91,14 +92,11 @@ if (!$opt_d) {
 	# ---- HTTP ---
 	# LWP crée un agent et une requête
 	my $ua  = LWP::UserAgent->new( agent => $USER_AGENT);
-	my @json_request;
-	$json_request[0] = "ihave";
-	my %json_argv = (
-		Jid => [($article{'Data'}{'*ArticleID'} ? $article{'Data'}{'*ArticleID'} : $article{'Jid'})],
-		From => $domain
-	);
-	$json_request[1] = \%json_argv;
-	my $json_string = JSON->new->utf8->encode(\@json_request);
+
+	my $rq_arg = ($article{'Data'}{'*ArticleID'} ? $article{'Data'}{'*ArticleID'} : $article{'Jid'});
+	my $rq_key = ($article{'Data'}{'*ArticleID'} ? '*ArticleID' : 'Jid');
+	my $json_string = json_request ("ihave", $rq_key, $rq_arg);
+
 	print "> ".$json_string."\n";
 	my $h = HTTP::Headers->new(Content_Type => 'application/json');
 	my $req = HTTP::Request->new( POST => "http://$server/jntp/",$h, $json_string );
@@ -110,13 +108,8 @@ if (!$opt_d) {
 	my $json_resp = JSON->new->decode($res);
 
 	if (ref($json_resp) eq 'ARRAY' && scalar(grep $_, @$json_resp) > 0 && $$json_resp[0] eq "iwant" && scalar(grep $_, $$json_resp[1]{'Jid'}[0]) > 0 && $$json_resp[1]{'Jid'}[0] eq $article{'Jid'}) {
-		$json_request[0] = "diffuse";
-		my %json_argv = (
-			From => $domain,
-			Packet => \%article
-		);
-		$json_request[1] = \%json_argv;
-		$json_string = JSON->new->utf8->encode(\@json_request);
+		my $json_string = json_request ("diffuse", 'Packet', \%article);
+		print "> ".$json_string."\n";
 		my $h = HTTP::Headers->new(Content_Type => 'application/json');
 		my $req = HTTP::Request->new( POST => "http://$server/jntp/",$h, $json_string );
 		my $res = $ua->request($req);
@@ -294,6 +287,10 @@ sub n2j {
         my $body = $ent->body;
         $body = join('', @$body);
 
+        # DataType::Article
+        my $closetag = "[/signature]";
+        $body =~ s/\n-- \n(?![\s\S]*\n-- \n)([\s\S]+)/\n[signature]$1$closetag/ if ($DATATYPE eq 'Article');
+
         if (!defined($charset)) {
         	$charset = detect($body);
             $data{'OriginHeaders'}{'CharsetDetect'} = $charset;
@@ -372,9 +369,16 @@ sub httpdate {
 #
 # Requête JNTP
 #
-sub jntp_request {
-	my ($command, $key, $value) = @_;
+sub json_request {
+	my ($command, $key, $data) = @_;
 
+	my @request = ($command);
+	my %argv = (
+		From	=>	$domain,
+		$key	=>	($key eq 'Jid' ? [$data] : $data)
+	);
+	push (@request, \%argv);
+	return JSON->new->utf8->encode(\@request);
 }
 # ------------------------------
 
@@ -384,9 +388,9 @@ sub jntp_request {
 sub read_file {
 	my ($path) = @_;
 
-	open (my $file, '<', $path) or die $!;
-	my @lines = <$file>;
-	$file = join ('', @lines);
+	open (FILE, '<', $path) or die $!;
+	my @lines = <FILE>;
+	my $file = join ('', @lines);
 	chomp($file);
 	return $file;
 }
