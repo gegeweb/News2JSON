@@ -60,6 +60,7 @@ use lib '/usr/local/news/lib/perl'; use INN::Config;
 =cut
 
 use strict;
+use utf8;
 
 use JSON;
 use MIME::Parser;
@@ -84,9 +85,12 @@ my $head;
 
 # Global config (constant in upper case)
 my $GW_NAME     = "News2Json";
-my $GW_VERSION  = "0.2.1";
+my $GW_VERSION  = "0.2.3";
 my $USER_AGENT	= "$GW_NAME/$GW_VERSION";
 my $FROM_DOMAIN = $INN::Config::fromhost;
+my $PROTOCOL	= 'JNTP-Transitional';
+my $PROTOCOL_V	= '0.65';
+
 my $conf_file = $INN::Config::newsetc.'/news2json.cf';
 # SSL Keys
 my $pubkey = read_file($INN::Config::newsetc.'/ssl/jntp.cert');
@@ -106,7 +110,7 @@ if ($use_syslog) {
     openlog('news2json', 'pid', $INN::Config::syslog_facility);
 }
 
-logmsg('begin');
+logmsg('starting');
 
 ## Read conf File
 if (-e($conf_file) && -r($conf_file)) {
@@ -193,7 +197,7 @@ while (<STDIN>) {
 	}
 }
 
-logmsg('end');
+logmsg('closed');
 closelog() if $use_syslog;
 exit 0;
 
@@ -259,8 +263,8 @@ sub n2j {
         Newsgroups => [],
         FollowupTo => [],
         References => [],
-        Protocol => 'JNTP-Transsitional',
-        ProtocolVersion => '0.65',
+        Protocol => $PROTOCOL,
+        ProtocolVersion => $PROTOCOL_V,
         Origin => 'NNTP',
         OriginServer => $FROM_DOMAIN,
         Server => $USER_AGENT,
@@ -286,11 +290,13 @@ sub n2j {
 			return undef;
         }
         if ($value && $key ne "xref" && $key ne "message-id") {
+        	# First try to convert to utf8 non mime-encoded header
+			my $c_head = detect($value);
+			$value = decode($c_head, $value) if (defined($c_head);
         	# Decode encoded headers
         	my $wd = supported MIME::WordDecoder 'UTF-8';
-        	$value = $wd->decode($value);
+        	$value = $wd->decode($value) if (!defined($c_head);
         	# Réassemble sur une ligne et supprime le newline
-        	# $value = join " ", split m/[ \n\t]+/, $value;
         	$value = join " ", split m/[ \n\t]+/, $value;
         	chomp($value);
 
@@ -315,7 +321,7 @@ sub n2j {
         	}
         	elsif ($key eq "references") {
         		(undef, @ref) = split m/[<>, \n\t]+/, $value;
-        		$data{$header[0]} = \@ref;
+        		$data{$header[0]} = \@ref if (scalar(grep $_, @ref) > 0);
         		next;
         	}
         	elsif ( grep { $key eq $_ } (qw(newsgroups followup-to)) ) {
@@ -327,7 +333,7 @@ sub n2j {
         	}
         	elsif ($key eq "from") {
         		my ($addr) = Mail::Address->parse($value);
-        		$data{'FromName'} = $addr->name;
+        		$data{'FromName'} = ($addr->phrase ? $addr->phrase : '');
         		$data{'FromMail'} = $addr->address;
         		next;
         	}
