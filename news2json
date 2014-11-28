@@ -414,12 +414,12 @@ sub n2j {
 			}
 			$mime_encoding = $subent->head->mime_encoding;
 			$charset = $subent->head->mime_attr('content-type.charset');
-			$data{'OriginHeaders'}{'MimeType'} = $mime_type;
 			if ( !defined($mime_encoding) || grep { $mime_encoding eq $_ }
 				(qw(quoted-printable base64 7bit)) ) {
 				$subent->head->replace('Content-transfer-encoding', "8bit");
 			}
 			if ($mime_type eq "text/plain") {
+				$data{'OriginHeaders'}{'MimeType'} = $subent->mime_type;
 				my $body = $subent->body;
 				$body = join('', @$body);
 				my $closetag = "[/signature]";
@@ -437,8 +437,7 @@ sub n2j {
 			}
 			else {
 				## Nothing
-				$parser->filer->purge;
-				return undef;
+				next;
 			}
 		}
 	}
