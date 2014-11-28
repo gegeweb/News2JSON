@@ -292,10 +292,10 @@ sub n2j {
         if ($value && $key ne "xref" && $key ne "message-id") {
         	# First try to convert to utf8 non mime-encoded header
 			my $c_head = detect($value);
-			$value = decode($c_head, $value) if (defined($c_head);
+			$value = decode($c_head, $value) if (defined($c_head));
         	# Decode encoded headers
         	my $wd = supported MIME::WordDecoder 'UTF-8';
-        	$value = $wd->decode($value) if (!defined($c_head);
+        	$value = $wd->decode($value) if (!defined($c_head));
         	# Réassemble sur une ligne et supprime le newline
         	$value = join " ", split m/[ \n\t]+/, $value;
         	chomp($value);
