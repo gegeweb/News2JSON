@@ -335,8 +335,8 @@ sub n2j {
         	elsif ($key eq "from") {
         		my $fromname;
         		my ($addr) = Mail::Address->parse($value);
-        		$fromname = $addr->phrase.' '.$addr->comment if ($addr->phrase && $addr->comment);
-        		$fromname ||= $addr->phrase;
+        		($fromname = $addr->phrase) =~ s/\"(.*?)\"/$1/;
+        		$fromname = $fromname.' '.$addr->comment if ($fromname && $addr->comment);
         		($fromname ||= $addr->comment) =~  s/\((.*?)\)/$1/ if (!$fromname);
         		$data{'FromName'} = ($fromname ? $fromname : '');
         		$data{'FromMail'} = $addr->address;
