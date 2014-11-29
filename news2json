@@ -85,11 +85,12 @@ my $head;
 
 # Global config (constant in upper case)
 my $GW_NAME     = "News2Json";
-my $GW_VERSION  = "0.2.3";
+my $GW_VERSION  = "0.2.4";
 my $USER_AGENT	= "$GW_NAME/$GW_VERSION";
 my $FROM_DOMAIN = $INN::Config::fromhost;
 my $PROTOCOL	= 'JNTP-Transitional';
 my $PROTOCOL_V	= '0.65';
+my $ORIGIN		= 'NNTP';
 
 my $conf_file = $INN::Config::newsetc.'/news2json.cf';
 # SSL Keys
@@ -265,7 +266,7 @@ sub n2j {
         References => [],
         Protocol => $PROTOCOL,
         ProtocolVersion => $PROTOCOL_V,
-        Origin => 'NNTP',
+        Origin => $ORIGIN,
         OriginServer => $FROM_DOMAIN,
         Server => $USER_AGENT,
         ServerPublicKey => $pubkey,
@@ -332,25 +333,29 @@ sub n2j {
         		next;
         	}
         	elsif ($key eq "from") {
+        		my $fromname;
         		my ($addr) = Mail::Address->parse($value);
-        		$data{'FromName'} = ($addr->phrase ? $addr->phrase : '');
+        		$fromname = $addr->phrase.' '.$addr->comment if ($addr->phrase && $addr->comment);
+        		$fromname ||= $addr->phrase;
+        		($fromname ||= $addr->comment) =~  s/\((.*?)\)/$1/ if (!$fromname);
+        		$data{'FromName'} = ($fromname ? $fromname : '');
         		$data{'FromMail'} = $addr->address;
         		next;
         	}
         	elsif ( grep { $key eq $_ } (qw(injection-date nntp-posting-date)) ) {
         		$injectiondate = httpdate($value);
-        		$data{'OriginHeaders'}{$header[0]} = $value;
+        		$data{$ORIGIN.'Headers'}{$header[0]} = $value;
         		next;
         	}
         	elsif ($key eq "x-trace") {
-        		$data{'OriginHeaders'}{$header[0]} = $value;
+        		$data{$ORIGIN.'Headers'}{$header[0]} = $value;
         		my @matches = $value =~ /\((.*?)\)/x;
         		$injectiondate = httpdate($matches[0]) if (@matches && !defined($injectiondate));
         		next;
         	}
         	elsif ($key eq "date") {
         		$injectiondate = httpdate($value) if (!defined($injectiondate));
-        		$data{'OriginHeaders'}{$header[0]} = $value;
+        		$data{$ORIGIN.'Headers'}{$header[0]} = $value;
         		next;
         	}
         	elsif ( grep { $key eq $_ } (qw(user-agent reply-to organization subject)) ) {
@@ -364,11 +369,11 @@ sub n2j {
         	}
         	elsif ($key eq "nntp-posting-host") {
         		$data{'PostingHost'} = $value;
-        		$data{'OriginHeaders'}{$header[0]} = $value;
+        		$data{$ORIGIN.'Headers'}{$header[0]} = $value;
         		next;
         	}
         	else {
-        		$data{'OriginHeaders'}{$header[0]} = $value;
+        		$data{$ORIGIN.'Headers'}{$header[0]} = $value;
         	}
         }
 	}
@@ -385,7 +390,7 @@ sub n2j {
 		$mime_type = "text/plain";
 		$head->replace('Content-type', 'text/plain');
 	}
-	$data{'OriginHeaders'}{'MimeType'} = $mime_type;
+	$data{$ORIGIN.'Headers'}{'MimeType'} = $mime_type;
 	if (!$ent->is_multipart) {
 		$charset = $head->mime_attr('content-type.charset');
 		if ( !defined($mime_encoding) || grep { $mime_encoding eq $_ }
@@ -402,7 +407,7 @@ sub n2j {
 		if (!defined($charset)) {
 			$charset = detect($body);
 			$charset ||= 'us-ascii';
-			$data{'OriginHeaders'}{'CharsetDetect'} = $charset;
+			$data{$ORIGIN.'Headers'}{'CharsetDetect'} = $charset;
 		}
 		$body = decode($charset, $body)  if (defined($charset));
 		$data{'Body'} = $body;
@@ -425,7 +430,7 @@ sub n2j {
 				$subent->head->replace('Content-transfer-encoding', "8bit");
 			}
 			if ($mime_type eq "text/plain") {
-				$data{'OriginHeaders'}{'MimeType'} = $subent->mime_type;
+				$data{$ORIGIN.'Headers'}{'MimeType'} = $subent->mime_type;
 				my $body = $subent->body;
 				$body = join('', @$body);
 				my $closetag = "[/signature]";
@@ -436,7 +441,7 @@ sub n2j {
 				if (!defined($charset)) {
 					my $charset = detect($body);
 					$charset ||= 'us-ascii';
-					$data{'OriginHeaders'}{'CharsetDetect'} = $charset;
+					$data{$ORIGIN.'Headers'}{'CharsetDetect'} = $charset;
 				}
 				$body = decode($charset, $body) if (defined($charset));
 				$data{'Body'} = $body;
@@ -474,9 +479,9 @@ sub jntp_request {
 
 # InjectionDate
 sub httpdate {
-    my ($txt) = @_;
+    my ($date) = @_;
 
-    my $dt = DateTime::Format::HTTP->parse_datetime($txt);
+    my $dt = DateTime::Format::HTTP->parse_datetime($date);
     $dt = $dt->clone()->set_time_zone('UTC');
     return undef if ($dt > DateTime->now());
     $dt = $dt->strftime("%FT%TZ");
