@@ -18,19 +18,21 @@ send it to JNTP server over HTTP.
 
 In the INN's newsfeeds file, you need to have a channel feed:
 
- 	news2json!:!*:Ac,Tc,Wnm*:<pathbin>/news2json
+ 	news2json!:!*:Ac,Tc,Wnm*:&lt;pathbin&gt;/news2json
 
 and a site for each of the various jntp site you're feeding,
 such as
 
  	nemo.gegeweb.org/from-jntp:!*,local.*:Ap,Tm:news2json!
 
-According to JNTP RFC (see <http://www.nemoweb.net/?page_id=75>),
+According to JNTP RFC (see &lt;http://www.nemoweb.net/?page_id=75&gt;),
 if your hostname doesn't match with your public ip/hostname
 configured for your server by the JNTP server you're feeding you
-need to fix your 'fromname' in the optional <pathetc>/news2json.cf.
+need to fix your 'fromname' in the optional &lt;pathetc&gt;/news2json.cf.
+
 This file map jntp fqdn feed with hostname in one line per feed needed
 to be fixed.
+
 For exemple if your hostname (fromhost in innfeed.conf) is
 name.domain.local but you need to be jntp.public.tld :
 
@@ -38,16 +40,17 @@ name.domain.local but you need to be jntp.public.tld :
 	name.domain.local				jntp.public.tld
 
 Signing Jid with ssl/RSA 1024 key:
+----------------------------------
 this program attempt to find ssl/RSA keys pair in <pathetc>/ssl.
 
 Create the folder if not exists:
 
-	$ sudo -u news mkdir <pathetc>/ssl
-	$ sudo chmod 700 <pathetc>/ssl
+	$ sudo -u news mkdir &lt;pathetc&gt;/ssl
+	$ sudo chmod 700 &lt;pathetc&gt;/ssl
 
 Generate keys pair
 
-	$ sudo -u news openssl genrsa -out <pathetc>/ssl/jntp.key 1024
+	$ sudo -u news openssl genrsa -out &lt;pathetc&gt;/ssl/jntp.key 1024
 	$ sudo -u news openssl rsa -in <pathetc>/ssl/jntp.key -pubout <pathetc>/ssl/jntp.cert
 
 DESCRIPTION
