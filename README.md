@@ -52,7 +52,7 @@ Create the folder if not exists:
 Generate keys pair
 
 	$ sudo -u news openssl genrsa -out <pathetc>/ssl/jntp.key 1024
-	$ sudo -u news openssl rsa -in <pathetc>/ssl/jntp.key -pubout <pathetc>/ssl/jntp.cert
+	$ sudo -u news openssl rsa -in <pathetc>/ssl/jntp.key -pubout > <pathetc>/ssl/jntp.cert
 
 DESCRIPTION
 ===========
