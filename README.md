@@ -1,4 +1,4 @@
-NeNews2JSON
+News2JSON
 =========
 
 news2json - News (RFC5536 / RFC1036) to JNTP (JSON) GateWay for INN
@@ -33,11 +33,12 @@ need to fix your 'fromname' in the optional &lt;pathetc&gt;/news2json.cf.
 This file map jntp fqdn feed with hostname in one line per feed needed
 to be fixed.
 
-For exemple if your hostname (fromhost in innfeed.conf) is
-name.domain.local but you need to be jntp.public.tld :
+For example if your hostname (fromhost in <pathetc>/innfeed.conf) is
+name.domain.local but you need to be jntp.public.tld for the feed 
+nemo.gegeweb.org such as above :
 
 	# Feed (fqdn in newsfeeds)		Fromname
-	name.domain.local				jntp.public.tld
+	nemo.gegeweb.org				jntp.public.tld
 
 Signing Jid with ssl/RSA 1024 key:
 ----------------------------------
