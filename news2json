@@ -369,7 +369,7 @@ sub n2j {
         		$data{$header[0]} = $value;
         		next;
         	}
-        	elsif ( grep { $key eq $_ } (qw(x-complaints-to complaints-to) ) {
+        	elsif ( grep { $key eq $_ } (qw(x-complaints-to complaints-to)) ) {
         		$data{'ComplaintsTo'} = $value;
         		next;
         	}
