@@ -18,9 +18,12 @@ use lib '/usr/local/news/lib/perl'; use INN::Config;
  send it to JNTP server over HTTP.
 
  In the INN's newsfeeds file, you need to have a channel feed:
+ 
  	news2json!:!*:Ac,Tc,Wnm*:<pathbin>/news2json
+ 
  and a site for each of the various jntp site you're feeding,
  such as
+ 
  	nemo.gegeweb.org/from-jntp:!*,local.*:Ap,Tm:news2json!
 
  According to JNTP RFC (see <http://www.nemoweb.net/?page_id=75>),
@@ -29,10 +32,12 @@ use lib '/usr/local/news/lib/perl'; use INN::Config;
  need to fix your 'fromname' in the optional <pathetc>/news2json.cf.
  This file map jntp fqdn feed with hostname in one line per feed needed
  to be fixed.
- For exemple if your hostname (fromhost in innfeed.conf) is
- name.domain.local but you need to be jntp.public.tld :
+ For example if your hostname (fromhost in <pathetc>/innfeed.conf) is
+ name.domain.local but you need to be jntp.public.tld for the feed 
+ nemo.gegeweb.org such as above :
+ 
  	# Feed (fqdn in newsfeeds)		Fromname
- 	name.domain.local				jntp.public.tld
+ 	nemo.gegeweb.org				jntp.public.tld
 
  Signing Jid with ssl/RSA 1024 key:
  this program attempt to find ssl/RSA keys pair in <pathetc>/ssl.
@@ -85,7 +90,7 @@ my $head;
 
 # Global config (constant in upper case)
 my $GW_NAME     = "News2Json";
-my $GW_VERSION  = "0.2.4";
+my $GW_VERSION  = "0.2.5";
 my $USER_AGENT	= "$GW_NAME/$GW_VERSION";
 my $FROM_DOMAIN = $INN::Config::fromhost;
 my $PROTOCOL	= 'JNTP-Transitional';
@@ -350,11 +355,11 @@ sub n2j {
         	elsif ($key eq "x-trace") {
         		$data{$ORIGIN.'Headers'}{$header[0]} = $value;
         		my @matches = $value =~ /\((.*?)\)/x;
-        		$injectiondate = httpdate($matches[0]) if (@matches && !defined($injectiondate));
+        		$injectiondate ||= httpdate($matches[0]) if (@matches);
         		next;
         	}
         	elsif ($key eq "date") {
-        		$injectiondate = httpdate($value) if (!defined($injectiondate));
+        		$injectiondate ||= httpdate($value);
         		$data{$ORIGIN.'Headers'}{$header[0]} = $value;
         		next;
         	}
@@ -363,7 +368,7 @@ sub n2j {
         		$data{$header[0]} = $value;
         		next;
         	}
-        	elsif ($key eq "x-complaints-to") {
+        	elsif ( grep { $key eq $_ } (qw(x-complaints-to complaints-to) ) {
         		$data{'ComplaintsTo'} = $value;
         		next;
         	}
@@ -372,13 +377,26 @@ sub n2j {
         		$data{$ORIGIN.'Headers'}{$header[0]} = $value;
         		next;
         	}
+			elsif ($key eq "injection-info") {
+				$data{$ORIGIN.'Headers'}{$header[0]} = $value;
+				my @injinf = split ('; ', $value);
+				$data{'PostingHost'} = $injinf[0];
+				shift(@injinf);
+				foreach (@injinf) {
+					my @injinfs = split('=',$_, 2);
+					$injinfs[1] =~ s/\"(.*?)\"/$1/;
+					$data{'ComplaintsTo'} = $injinfs[1] if ($injinfs[0] eq 'mail-complaints-to');
+					$data{'PostingHost'} = $injinfs[1] if ($injinfs[0] eq 'posting-host');
+				}
+				next;
+			}
         	else {
         		$data{$ORIGIN.'Headers'}{$header[0]} = $value;
         	}
         }
 	}
 
-	$injectiondate = httpdate(DateTime->now()) if(!defined($injectiondate));
+	$injectiondate ||= httpdate(DateTime->now());
 	$data{'InjectionDate'} = $injectiondate;
 
 	$data{'ThreadID'} = $article{'Jid'} if (scalar(grep $_, @ref) == 0 && defined($article{'Jid'}));
@@ -474,7 +492,7 @@ sub jntp_request {
 		$key	=>	($key eq 'Jid' ? [$data] : $data)
 	);
 	push (@request, \%argv);
-	return JSON->new->utf8->encode(\@request);
+	return JSON->new->utf8->canonical(1)->encode(\@request);
 }
 
 # InjectionDate
