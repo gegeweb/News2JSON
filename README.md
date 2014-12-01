@@ -38,7 +38,7 @@ name.domain.local but you need to be jntp.public.tld for the feed
 nemo.gegeweb.org such as above :
 
 	# Feed (fqdn in newsfeeds)		Fromname
-	name.domain.local				jntp.public.tld
+	nemo.gegeweb.org				jntp.public.tld
 
 Signing Jid with ssl/RSA 1024 key:
 ----------------------------------
