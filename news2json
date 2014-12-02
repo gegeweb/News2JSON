@@ -62,6 +62,8 @@ use lib '/usr/local/news/lib/perl'; use INN::Config;
  under the same terms as Perl 5.10.0. For more details, see the full
  text of the licenses in the directory LICENSES.
 
+ Some parts of this program are from Inn's controlchan and are
+ Copyright 2001 by Marco d'Itri <md@linux.it>
 =cut
 
 use strict;
@@ -134,8 +136,9 @@ if (-e($conf_file) && -r($conf_file)) {
 while (<STDIN>) {
 	chop;
 	my ($token, $msgid, $feed) = split(/\s+/, $_, 3);
-	next if not defined $token;
 	($curmsgid = $msgid || '') =~ s/<(.*?)\>/$1/;
+	next if (!defined($token) || !$curmsgid || !defined($feeds);
+
 
 	# Test if feed(s) want the article, do nothing if not
 	my %send_ok;
@@ -165,6 +168,22 @@ while (<STDIN>) {
 
 	if ( scalar(keys %send_ok) ) {
 
+		## --------
+		## Part code of controlchan
+		##
+		## Copyright 2001 by Marco d'Itri <md@linux.it>
+		##
+		## Redistribution and use in source and binary forms, with or without
+		## modification, are permitted provided that the following conditions
+		## are met:
+		##
+		##   1. Redistributions of source code must retain the above copyright
+		##      notice, this list of conditions and the following disclaimer.
+		##
+		##   2. Redistributions in binary form must reproduce the above copyright
+		##      notice, this list of conditions and the following disclaimer in the
+		##      documentation and/or other materials provided with the distribution.
+
 		my $artfh = open_article($token);
 		next if not defined $artfh;
 
@@ -174,10 +193,13 @@ while (<STDIN>) {
 		}
 		close $artfh or logdie('sm died with status ' . ($? >> 8));
 
+		## --------
+
 		%article = n2j($article_string);
-		next if not %article;
+		next if ( !scalar(keys %article) );
 	}
 	else { next; }
+
 	foreach (@feeds) {
 		if ($send_ok{$_}) {
 
@@ -207,22 +229,6 @@ while (<STDIN>) {
 logmsg('closed');
 closelog() if $use_syslog;
 exit 0;
-
-# Open an article
-sub open_article {
-    my $token = shift;
-
-    if ($token =~ /^\@.+\@$/) {
-        my $pid = open(ART, '-|');
-        logdie('Cannot fork: ' . $!) if $pid < 0;
-        if ($pid == 0) {
-            exec("$INN::Config::newsbin/sm", '-q', $token) or
-                logdie("Cannot exec sm: $!");
-        }
-        return *ART;
-    }
-    return undef;
-}
 
 # NetNews -> Hash (before convert to JSON String)
 sub n2j {
@@ -381,7 +387,7 @@ sub n2j {
 			elsif ($key eq "injection-info") {
 				$data{$ORIGIN.'Headers'}{$header[0]} = $value;
 				my @injinf = split ('; ', $value);
-				$data{'PostingHost'} = $injinf[0];
+				# $data{'PostingHost'} = $injinf[0];
 				shift(@injinf);
 				foreach (@injinf) {
 					my @injinfs = split('=',$_, 2);
@@ -519,6 +525,38 @@ sub read_file {
 	return $file;
 }
 
+## -------
+##  Part code of controlchan
+##
+##  Copyright 2001 by Marco d'Itri <md@linux.it>
+##
+##  Redistribution and use in source and binary forms, with or without
+##  modification, are permitted provided that the following conditions
+##  are met:
+##
+##   1. Redistributions of source code must retain the above copyright
+##      notice, this list of conditions and the following disclaimer.
+##
+##   2. Redistributions in binary form must reproduce the above copyright
+##      notice, this list of conditions and the following disclaimer in the
+##      documentation and/or other materials provided with the distribution.
+
+# Open an article
+sub open_article {
+    my $token = shift;
+
+    if ($token =~ /^\@.+\@$/) {
+        my $pid = open(ART, '-|');
+        logdie('Cannot fork: ' . $!) if $pid < 0;
+        if ($pid == 0) {
+            exec("$INN::Config::newsbin/sm", '-q', $token) or
+                logdie("Cannot exec sm: $!");
+        }
+        return *ART;
+    }
+    return undef;
+}
+
 # Logging
 sub logmsg {
     my ($msg, $lvl) = @_;
@@ -539,6 +577,8 @@ sub logdie {
     closelog() if $use_syslog;
     exit 1;
 }
+
+## -------
 
 __END__
 
