@@ -137,7 +137,7 @@ while (<STDIN>) {
 	chop;
 	my ($token, $msgid, $feed) = split(/\s+/, $_, 3);
 	($curmsgid = $msgid || '') =~ s/<(.*?)\>/$1/;
-	next if (!defined($token) || !$curmsgid || !defined($feeds);
+	next if (!defined($token) || !$curmsgid || !defined($feed));
 
 
 	# Test if feed(s) want the article, do nothing if not
