@@ -163,7 +163,7 @@ while (<STDIN>) {
 			&& $$json_resp[0] eq "iwant" && scalar(grep $_, $$json_resp[1]{'Jid'}[0]) > 0
 			&& $$json_resp[1]{'Jid'}[0] eq $curmsgid) {
 			$send_ok{$_} = 1;
-		}
+			} else { $send_ok{$_} = 0; next; }
 	}
 
 	if ( scalar(keys %send_ok) ) {
