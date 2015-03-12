@@ -92,7 +92,7 @@ my $head;
 
 # Global config (constant in upper case)
 my $GW_NAME     = "News2Json";
-my $GW_VERSION  = "0.2.5";
+my $GW_VERSION  = "0.2.6";
 my $USER_AGENT	= "$GW_NAME/$GW_VERSION";
 my $FROM_DOMAIN = $INN::Config::fromhost;
 my $PROTOCOL	= 'JNTP-Transitional';
