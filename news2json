@@ -119,7 +119,7 @@ if ($use_syslog) {
     openlog('news2json', 'pid', $INN::Config::syslog_facility);
 }
 
-logmsg('starting');
+logmsg('starting', 'info');
 
 ## Read conf File
 if (-e($conf_file) && -r($conf_file)) {
