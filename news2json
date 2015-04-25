@@ -230,7 +230,7 @@ while (<STDIN>) {
 	}
 }
 
-logmsg('closed');
+logmsg('closed', 'info');
 closelog() if $use_syslog;
 exit 0;
 
