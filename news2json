@@ -1,7 +1,7 @@
-#! /usr/local/bin/perl -w
+#! /usr/bin/perl -w
 
 # Change this to according the INN perl lib location
-use lib '/usr/local/news/lib/perl'; use INN::Config;
+use lib '/usr/share/perl5'; use INN::Config;
 
 =head1 NAME
 
@@ -83,6 +83,8 @@ use Crypt::OpenSSL::RSA;
 use MIME::Base64;
 
 # globals
+
+
 my $curmsgid;
 my %domain;
 my %article;
@@ -92,12 +94,12 @@ my $head;
 
 # Global config (constant in upper case)
 my $GW_NAME     = "News2Json";
-my $GW_VERSION  = "0.2.6";
+my $GW_VERSION  = "0.2.8";
 my $USER_AGENT	= "$GW_NAME/$GW_VERSION";
 my $FROM_DOMAIN = $INN::Config::fromhost;
 my $PROTOCOL	= 'JNTP-Transitional';
 my $PROTOCOL_V	= '0.65';
-my $ORIGIN		= 'NNTP';
+my $ORIGIN	= 'NNTP';
 my $DATATYPE	= 'Article';
 
 my $conf_file = $INN::Config::newsetc.'/news2json.cf';
@@ -163,7 +165,10 @@ while (<STDIN>) {
 			&& $$json_resp[0] eq "iwant" && scalar(grep $_, $$json_resp[1]{'Jid'}[0]) > 0
 			&& $$json_resp[1]{'Jid'}[0] eq $curmsgid) {
 			$send_ok{$_} = 1;
-		}
+		} else { 
+				logmsg ("send_ko : $msgid" , 'info');
+				next; 
+			}
 	}
 
 	if ( scalar(keys %send_ok) ) {
@@ -194,24 +199,21 @@ while (<STDIN>) {
 		close $artfh or logdie('sm died with status ' . ($? >> 8));
 
 		## --------
-
 		%article = n2j($article_string);
+
 		next if ( !scalar(keys %article) );
 	}
 	else { next; }
 
 	foreach (@feeds) {
 		if ($send_ok{$_}) {
-
 			$article{'Data'}{'OriginServer'} = $domain{$_};
 			$article{'Route'}[0] = $domain{$_};
-
 			my $rsa_priv = Crypt::OpenSSL::RSA->new_private_key($privkey);
 			my $signature = $rsa_priv->sign($article{'Jid'});
 			$signature = encode_base64($signature);
 			chomp ($signature);
 			$article{'ServerSign'} = $signature;
-
 			my $ua  = LWP::UserAgent->new( agent => $USER_AGENT);
 			my $json_string = jntp_request ("diffuse", 'Packet', \%article, $domain{$_});
 			logmsg($_.' > diffuse : <'.$curmsgid.'>', 'info');
@@ -226,7 +228,7 @@ while (<STDIN>) {
 	}
 }
 
-logmsg('closed');
+logmsg('closed', 'info');
 closelog() if $use_syslog;
 exit 0;
 
@@ -237,6 +239,7 @@ sub n2j {
     $parser = new MIME::Parser;
     $parser->output_dir("$INN::Config::pathtmp");
     $ent  = $parser->parse_data($art);
+
 	$head = $ent->head;
 
 	# Article is empty or does not exist.
@@ -285,6 +288,7 @@ sub n2j {
         ThreadID => '',
         Body => ''
 	);
+
     my %article = (
         Route => [$FROM_DOMAIN],
         Jid => $curmsgid,
@@ -293,16 +297,18 @@ sub n2j {
         Media => []
     );
 	foreach (@$headers) {
+
 		my @header = split(':',$_, 2);
 		my $key = lc($header[0]);
 		my $value = $ent->head->get($key);
 		# Test if already sent from jntp, die if true.
         if (($key eq "path" && index($value, "!from-jntp") !=-1) || $key eq "jntp-protocol") {
 			$parser->filer->purge;
-            logmsg ("<$curmsgid> already sent from jntp!", 'info');
+            logmsg ("<$curmsgid> already sent from jntp!", 'notice');
 			return undef;
         }
         if ($value && $key ne "xref" && $key ne "message-id") {
+
         	# First try to convert to utf8 non mime-encoded header
 			my $c_head = detect($value);
 			$value = decode($c_head, $value) if (defined($c_head));
@@ -350,12 +356,39 @@ sub n2j {
         		($fromname = $addr->phrase) =~ s/\"(.*?)\"/$1/;
         		$fromname = $fromname.' '.$addr->comment if ($fromname && $addr->comment);
         		($fromname ||= $addr->comment) =~  s/\((.*?)\)/$1/ if (!$fromname);
+        		#moche mais efficace    
+        		
+			    ####problèmes from
+			    my $findDeuxPoint = ' : ';
+			    my $replaceDeuxPoint = ':';
+			    $findDeuxPoint = quotemeta $findDeuxPoint; # escape regex metachars if present
+			    $fromname =~ s/$findDeuxPoint/$replaceDeuxPoint/g;
+			    
+			    
+			    my $findChapeau = '^ ';
+			    my $replaceChapeau = '^';
+			    $findChapeau = quotemeta $findChapeau; # escape regex metachars if present
+			    $fromname =~ s/$findChapeau/$replaceChapeau/g;
+			    
+			    my $findArobase = ' @ ';
+			    my $replaceArobase = '@';
+			    $findArobase = quotemeta $findArobase; # escape regex metachars if present 
+			    $fromname =~ s/$findArobase/$replaceArobase/g;
+			    
+			    my $findPoint = ' . ';
+			    my $replacePoint = '.';
+			    $findPoint = quotemeta $findPoint; # escape regex metachars if present 
+			    $fromname =~ s/$findPoint/$replacePoint/g;
+			       		
         		$data{'FromName'} = ($fromname ? $fromname : '');
         		$data{'FromMail'} = $addr->address;
         		next;
         	}
         	elsif ( grep { $key eq $_ } (qw(injection-date nntp-posting-date)) ) {
-        		$injectiondate = httpdate($value);
+
+        		# $injectiondate = httpdate($value);
+			# Hack by Julien Arlandis
+			$injectiondate = httpdate(DateTime->now());
         		$data{$ORIGIN.'Headers'}{$header[0]} = $value;
         		next;
         	}
@@ -505,7 +538,6 @@ sub jntp_request {
 # InjectionDate
 sub httpdate {
     my ($date) = @_;
-
     my $dt = DateTime::Format::HTTP->parse_datetime($date);
     $dt = $dt->clone()->set_time_zone('UTC');
     return undef if ($dt > DateTime->now());
