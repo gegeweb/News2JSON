@@ -19,7 +19,7 @@ use lib '/usr/share/perl5'; use INN::Config;
 
  In the INN's newsfeeds file, you need to have a channel feed:
 
- 	news2json!:!*:Ac,Tc,Wnm*:<pathbin>/news2json
+ 	news2json!:!*:Ac,Af,Tc,Wnm*:<pathbin>/news2json
 
  and a site for each of the various jntp site you're feeding,
  such as
@@ -94,7 +94,7 @@ my $head;
 
 # Global config (constant in upper case)
 my $GW_NAME     = "News2Json";
-my $GW_VERSION  = "0.2.8";
+my $GW_VERSION  = "0.2.9";
 my $USER_AGENT	= "$GW_NAME/$GW_VERSION";
 my $FROM_DOMAIN = $INN::Config::fromhost;
 my $PROTOCOL	= 'JNTP-Transitional';
@@ -118,7 +118,7 @@ if ($use_syslog) {
         eval "sub Sys::Syslog::_PATH_LOG { '/dev/log' }" if $^O eq 'dec_osf';
         Sys::Syslog::setlogsock('unix') if $^O =~ /linux|dec_osf|freebsd|darwin/;
     }
-    openlog('news2json', 'pid', $INN::Config::syslog_facility);
+    openlog("$GW_NAME-$GW_VERSION", 'pid', $INN::Config::syslog_facility);
 }
 
 logmsg('starting', 'info');
@@ -166,7 +166,7 @@ while (<STDIN>) {
 			&& $$json_resp[1]{'Jid'}[0] eq $curmsgid) {
 			$send_ok{$_} = 1;
 		} else { 
-				logmsg ("send_ko : $msgid" , 'info');
+				logmsg ("send_ko : $msgid $_" , 'info');
 				next; 
 			}
 	}
@@ -357,24 +357,32 @@ sub n2j {
         		$fromname = $fromname.' '.$addr->comment if ($fromname && $addr->comment);
         		($fromname ||= $addr->comment) =~  s/\((.*?)\)/$1/ if (!$fromname);
         		#moche mais efficace    
-        		
-			    ####problèmes from
+        		 
+			    ####problèmes from "user ." au lieu de "user."
+			    my $findespacepoiN = ' .';
+			    my $replaespacepoiN =  '.';
+			    $findespacepoiN = quotemeta $findespacepoiN; # escape regex metachars if present
+			    $fromname =~ s/$findespacepoiN/$replaespacepoiN/g; 
+			    
+                            ####problèmes from "user : lambda" au lieu de "user:lambda"
 			    my $findDeuxPoint = ' : ';
 			    my $replaceDeuxPoint = ':';
 			    $findDeuxPoint = quotemeta $findDeuxPoint; # escape regex metachars if present
 			    $fromname =~ s/$findDeuxPoint/$replaceDeuxPoint/g;
 			    
-			    
+			    ####problèmes from "user ^ lambda" au lieu de "user^lambda"
 			    my $findChapeau = '^ ';
 			    my $replaceChapeau = '^';
 			    $findChapeau = quotemeta $findChapeau; # escape regex metachars if present
 			    $fromname =~ s/$findChapeau/$replaceChapeau/g;
 			    
+			    ####problèmes from "user @ lambda" au lieu de "user@lambda"
 			    my $findArobase = ' @ ';
 			    my $replaceArobase = '@';
 			    $findArobase = quotemeta $findArobase; # escape regex metachars if present 
 			    $fromname =~ s/$findArobase/$replaceArobase/g;
 			    
+			    ####problèmes from "user . lambda" au lieu de "user.lambda"
 			    my $findPoint = ' . ';
 			    my $replacePoint = '.';
 			    $findPoint = quotemeta $findPoint; # escape regex metachars if present 
