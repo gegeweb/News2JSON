@@ -375,7 +375,7 @@ sub n2j {
 			    $findDeuxPoint = quotemeta $findDeuxPoint; # escape regex metachars if present
 			    $fromname =~ s/$findDeuxPoint/$replaceDeuxPoint/g;
 			    
-			    ####problèmes from "user ^ lambda" au lieu de "user^lambda"
+			    ####problèmes from "user^ lambda" au lieu de "user^lambda"
 			    my $findChapeau = '^ ';
 			    my $replaceChapeau = '^';
 			    $findChapeau = quotemeta $findChapeau; # escape regex metachars if present
@@ -387,8 +387,8 @@ sub n2j {
 			    $findArobase = quotemeta $findArobase; # escape regex metachars if present 
 			    $fromname =~ s/$findArobase/$replaceArobase/g;
 			    
-			    ####problèmes from "user . lambda" au lieu de "user.lambda"
-			    my $findPoint = ' . ';
+			    ####problèmes from "user. lambda" au lieu de "user.lambda"
+			    my $findPoint = '. ';
 			    my $replacePoint = '.';
 			    $findPoint = quotemeta $findPoint; # escape regex metachars if present 
 			    $fromname =~ s/$findPoint/$replacePoint/g;
