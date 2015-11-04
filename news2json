@@ -94,7 +94,7 @@ my $head;
 
 # Global config (constant in upper case)
 my $GW_NAME     = "News2Json";
-my $GW_VERSION  = "0.2.10";
+my $GW_VERSION  = "0.2.11";
 my $USER_AGENT	= "$GW_NAME/$GW_VERSION";
 my $FROM_DOMAIN = $INN::Config::fromhost;
 my $PROTOCOL	= 'JNTP-Transitional';
@@ -160,15 +160,20 @@ POST: while (<STDIN>) {
 		logmsg ( $_. ' < ' . $res, 'info');
 
 		my $json_resp = JSON->new->decode($res);
-
-		if (ref($json_resp) eq 'ARRAY' && scalar(grep $_, @$json_resp) > 0
-			&& $$json_resp[0] eq "iwant" && scalar(grep $_, $$json_resp[1]{'Jid'}[0]) > 0
-			&& $$json_resp[1]{'Jid'}[0] eq $curmsgid) {
-			$send_ok{$_} = 1;
+		
+		if(length($$json_resp[1]{'Jid'}[0])>3){
+			if (ref($json_resp) eq 'ARRAY' && scalar(grep $_, @$json_resp) > 0
+				&& $$json_resp[0] eq "iwant" && scalar(grep $_, $$json_resp[1]{'Jid'}[0]) > 0
+				&& $$json_resp[1]{'Jid'}[0] eq $curmsgid) {
+				$send_ok{$_} = 1;
+			} else { 
+					logmsg ("send_ko : $msgid $_" , 'info');
+					next; 
+				}
 		} else { 
-				logmsg ("send_ko : $msgid $_" , 'info');
+				logmsg ("bad_response : $msgid $_" , 'info');
 				next; 
-			}
+		}
 	}
 
 	if ( scalar(keys %send_ok) ) {
