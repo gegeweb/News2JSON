@@ -6,7 +6,7 @@ use lib '/usr/share/perl5'; use INN::Config;
 =head1 NAME
 
  news2json - News (RFC5536 / RFC1036) to JNTP (JSON) GateWay for INN
-
+ Copyright (c) 2001 by Marco d'Itri <md@linux.it> for controlchan's parts code
  Copyright (c) 2014, Gérald Niel
 
 =head1 SYNOPSIS
